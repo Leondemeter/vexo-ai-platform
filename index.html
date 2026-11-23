@@ -1,0 +1,127 @@
+<!doctype html>
+<html lang="cs">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Vexo Chat</title>
+  <style>
+    body {
+      margin: 0;
+      background: #f6f3ea;
+      color: #222e29;
+      font: 1.125rem/1.5 Georgia, serif;
+    }
+
+    main {
+      max-width: 38rem;
+      margin: clamp(2rem, 9vw, 6rem) auto;
+      padding-inline: 1.25rem;
+    }
+
+    h1 {
+      margin: 0 0 1.5rem;
+      font-size: clamp(2.5rem, 7vw, 4rem);
+      line-height: 1.1;
+    }
+
+    form { display: grid; gap: 0.75rem; }
+
+    textarea, button {
+      border: 1px solid #596a60;
+      border-radius: 0.35rem;
+      padding: 0.75rem 1rem;
+      font: inherit;
+    }
+
+    textarea { background: #fffdf8; color: inherit; resize: vertical; }
+
+    button {
+      justify-self: start;
+      background: #284e3f;
+      color: #fffdf8;
+      cursor: pointer;
+    }
+
+    button:hover:not(:disabled) { background: #1c382d; }
+    button:disabled { opacity: 0.65; cursor: wait; }
+    :focus-visible { outline: 2px solid #284e3f; outline-offset: 3px; }
+
+    #reply {
+      border-top: 1px solid #b2b9ad;
+      margin-top: 2rem;
+      padding-top: 1rem;
+      white-space: pre-wrap;
+      overflow-wrap: anywhere;
+    }
+  </style>
+</head>
+<body>
+  <main>
+    <h1>Vexo Chat</h1>
+    <form id="chat-form">
+      <label for="message">Vaše zpráva</label>
+      <textarea id="message" name="message" rows="4" required></textarea>
+      <button type="submit">Odeslat</button>
+    </form>
+    <p id="reply" role="status">Odpověď se zobrazí zde.</p>
+  </main>
+  <script>
+    const form = document.querySelector('#chat-form');
+    const messageField = document.querySelector('#message');
+    const submitButton = form.querySelector('button');
+    const reply = document.querySelector('#reply');
+    const failureMessage = 'Odpověď se nepodařilo načíst. Zkuste to znovu.';
+    const chatErrors = new Map([
+      ['invalid_message', 'Nejprve napište zprávu.'],
+      ['gemini_configuration', 'Přístup ke službě Gemini není správně nastavený.'],
+      ['rate_limited', 'Služba Gemini dosáhla limitu požadavků. Zkuste to později.'],
+      ['gemini_unavailable', 'Služba Gemini je dočasně nedostupná. Zkuste to později.'],
+      ['empty_reply', 'Gemini nevrátilo textovou odpověď. Zkuste zprávu přeformulovat.'],
+    ]);
+
+    form.addEventListener('submit', async (event) => {
+      event.preventDefault();
+      if (submitButton.disabled) return;
+
+      const message = messageField.value.trim();
+      if (!message) {
+        reply.textContent = 'Nejprve napište zprávu.';
+        messageField.focus();
+        return;
+      }
+
+      submitButton.disabled = true;
+      reply.textContent = 'Čekám na odpověď…';
+      try {
+        const response = await fetch('/.netlify/functions/chat', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+          body: JSON.stringify({ message }),
+        });
+        const data = await response.json().catch(() => null);
+        if (!response.ok) {
+          console.warn('[chat] Požadavek selhal.', {
+            status: response.status,
+            requestId: typeof data?.requestId === 'string' ? data.requestId : response.headers.get('x-nf-request-id'),
+          });
+          reply.textContent = response.status === 404
+            ? 'Funkce chatu není v tomto nasazení dostupná.'
+            : chatErrors.get(data?.error) ?? failureMessage;
+          return;
+        }
+        if (typeof data?.reply !== 'string' || !data.reply.trim()) {
+          console.warn('[chat] Odpověď neobsahuje text.');
+          reply.textContent = failureMessage;
+          return;
+        }
+        reply.textContent = data.reply;
+      } catch {
+        console.warn('[chat] Síťový požadavek selhal.');
+        reply.textContent = 'K chatu se nepodařilo připojit. Zkontrolujte připojení a zkuste to znovu.';
+      } finally {
+        submitButton.disabled = false;
+      }
+    });
+  </script>
+</body>
+</html>
