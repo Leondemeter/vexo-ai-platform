@@ -1,0 +1,7 @@
+{
+  "name": "vexo-ai-platform",
+  "private": true,
+  "dependencies": {
+    "@google/genai": "3.6.1"
+  }
+}
